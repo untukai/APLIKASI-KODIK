@@ -1,0 +1,67 @@
+name: Build iOS App (IPA)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS IPA (Unsigned)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build web app
+        run: npm run build
+
+      - name: Setup Capacitor iOS
+        run: |
+          npm install @capacitor/core @capacitor/cli @capacitor/ios
+          npx cap add ios || echo "iOS platform already exists"
+          npx cap sync ios
+
+      # Build Project menggunakan Xcodebuild
+      # Kita mematikan code signing agar tidak error karena tidak punya sertifikat developer berbayar
+      - name: Build Xcode Project (Unsigned)
+        run: |
+          cd ios/App
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            clean build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Langkah Penting: Membuat struktur .IPA secara manual
+      # 1. Buat folder 'Payload'
+      # 2. Masukkan App.app ke dalam 'Payload'
+      # 3. Zip menjadi file .ipa
+      - name: Create IPA File
+        run: |
+          cd ios/App
+          mkdir Payload
+          # Copy the .app bundle to the Payload folder (Standard IPA structure)
+          cp -r build/Build/Products/Debug-iphoneos/App.app Payload/
+          # Zip the Payload folder into an .ipa file
+          zip -r kodik-unsigned.ipa Payload
+
+      # Upload hasil .IPA ke GitHub Actions Artifacts
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kodik-ios-ipa
+          path: ios/App/kodik-unsigned.ipa
